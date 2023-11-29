@@ -8,6 +8,7 @@ import json
 import os.path
 import re
 import shutil
+from _socket import gethostbyname
 from urllib.parse import urlparse
 
 import openpyxl
@@ -136,46 +137,6 @@ def unit_iden(url):
     matches = re.findall(pattern, response.text, re.DOTALL)
 
 
-def write_xlsx(book, data_to_write, offset):
-    """
-    写入表格
-    :param book: 表格路径
-    :param data_to_write: 写入的数据
-    :param offset: 写入的表格坐标
-    :return: 无
-    """
-    workbook = openpyxl.load_workbook(book)
-    worksheet = workbook["高危漏洞线索表"]
-    # worksheet.parent.calc_on_load = False
-    # worksheet.parent.enable_auto_filter = False
-    worksheet[offset] = data_to_write
-    workbook.save(book)
-
-
-def write_xlsx_plus(book, data_to_write, offset):
-    """
-    写入表格plus
-    :param book: 表格路径
-    :param data_to_write: 写入的数据
-    :param offset: 写入的表格坐标
-    :return: 无
-    """
-    workbook = openpyxl.load_workbook(book)
-    worksheet = workbook["高危漏洞线索表"]
-    # 将所有数据存储在一个二维数组中
-    data_array = []
-    for row in range(len(data_to_write)):
-        data_row = []
-        for col in range(len(data_to_write[row])):
-            cell_offset = chr(65 + col) + str(row + 2)
-            data_row.append(data_to_write[row][col])
-        data_array.append(data_row)
-    # 批量写入数据
-    for data_row in data_array:
-        worksheet.append(data_row)
-    workbook.save(book)
-
-
 def vul_main(book, book_result):
     book_result_template = "template.xlsx"    # 模板位置
     if book.endswith(".xlsx"):
@@ -184,60 +145,35 @@ def vul_main(book, book_result):
         print("导入表格为xlsx，为方便xlrd处理已自动转为xls，稍后会自动删除\n转换后地址：" + book)
         print("--------------------------------------")
 
-    # 复制导出模板
+    # 复制模板文件为导出文件，用于后续操作
     shutil.copy2(book_result_template, book_result)
 
     workbook = xlrd.open_workbook(book)
-    # sheet_names = workbook.sheet_names()
-    # print(sheet_names)
     worksheet = workbook.sheet_by_name("漏洞列表")
     i = 1
-    # row_count = 1
-    # print(worksheet.nrows)
     data_array = []
     for row_index in range(worksheet.nrows):
-        details = []
         row_data = worksheet.row_values(row_index)
         # 如果第一个字段以数字开始，表示是漏洞详情行
-        if is_numeric(str(row_data[0])):
+        if is_numeric(str(row_data[0])) or "危" in str(row_data[1]) or "信息" in str(row_data[1]):
             # row_count += 1
             if "高危" in str(row_data[1]) or "紧急" in str(row_data[1]):
                 print("详情行数：" + str(row_index + 1))
                 url = row_data[3]
                 parsed_url = urlparse(url)
-                # 解析ip地址
-                # print("--------------------------------------")
                 print("正在解析IP地址......")
-                data = ip_iden(parsed_url.hostname, "百度")
-                # while True:
-                #     error_count = 0
-                #     try:
-                #         print("正在向接口请求解析第" + str(error_count + 1) + "次")
-                #         response = requests.get(
-                #             "http://whois.pconline.com.cn/ipJson.jsp?ip=" + str(parsed_url.hostname) + "&json=true")
-                #         data = json.loads(response.text)
-                #         break
-                #     except:
-                #         error_count += 1
-                #         print("解析失败")
-                #         continue
+                ip_addr = gethostbyname(parsed_url.hostname)
+                data = ip_iden(ip_addr, "百度")
                 print("解析完成")
                 pro = data["pro"]
                 city = data["city"]
                 num = i
-                details.append(num)
-                details.append(parsed_url.netloc.split(":")[0])
-                details.append(parsed_url.hostname)
                 if parsed_url.port is None:
                     port = 80
                     if parsed_url.scheme == "https":
                         port = 443
                 else:
                     port = parsed_url.port
-                details.append(str(port))
-                details.append(url)
-                details.append(parsed_url.scheme)
-                details.append(row_data[2])
                 if row_data[6] != "":
                     vul_num = row_data[6]
                 elif row_data[7] != "":
@@ -248,31 +184,31 @@ def vul_main(book, book_result):
                     vul_num = row_data[9]
                 else:
                     vul_num = "无"
-                details.append(vul_num)
-                details.append(vul_type_iden(row_data[2]))
-                details.append(pro)
-                details.append("")  # 发现时间
-                details.append("")  # 是否异地
-                details.append("")  # 单位
-                details.append("暂无")  # 关联个人姓名
-                details.append("暂无")  # 身份证
-                details.append("暂无")  # 手机号
-                details.append(pro)
-                details.append(city)
+                # 详细信息
+                details = [
+                    num,
+                    parsed_url.netloc.split(":")[0],
+                    ip_addr,
+                    str(port),
+                    url,
+                    parsed_url.scheme,
+                    row_data[2],
+                    vul_num,
+                    vul_type_iden(row_data[2]),
+                    pro,
+                    "",      # 发现时间
+                    "",      # 是否异地
+                    "",      # 单位
+                    "暂无",   # 关联个人姓名
+                    "暂无",   # 身份证
+                    "暂无",   # 手机号
+                    pro,
+                    city,
+                    "",
+                    "Web服务"
+                ]
                 print("写入数据：\n" + str(details))
-                # print("--------------------------------------")
-                # print("正在写入......")
-                # for col in range(65, 65 + len(details)):
-                #     offset = str(chr(col)) + str(i + 2)
-                #     # worksheet[offset] = details[col-65]
-                #     write_xlsx(book_result, details[col - 65], offset)
-
                 data_array.append(details)
-
-                # workbook_result = openpyxl.load_workbook(book_result)
-                # worksheet_result = workbook_result["高危漏洞线索表"]
-
-                # print("写入完成")
                 print("--------------------------------------")
                 i += 1
         # print(row_count)  #打印有效漏洞详情行
